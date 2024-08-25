@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="Start your development with Steller landing page.">
+    <meta name="author" content="Devcrud">
+    <title>Hossam Hassan Landing page | Web Developer</title>
+    <!-- font icons -->
+    <link rel="stylesheet" href="assets/vendors/themify-icons/css/themify-icons.css">
+    <!-- Bootstrap + Steller main styles -->
+	<link rel="stylesheet" href="assets/css/steller.css">
+    <link rel="icon" type="image/png" href="assets/imgs/new/logo3.png">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/default.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css">
+
+</head>
+
+<body data-spy="scroll" data-target=".navbar" data-offset="40" id="home">
+
+<!-- Page navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" data-spy="affix" data-offset-top="0">
+    <div class="container">
+        <a class="navbar-brand" href="#"><img src="assets/imgs/new/logo3.png"  href="index.html" alt=""></a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarSupportedContent">
+            <ul class="navbar-nav ml-auto align-items-center">
+                <li class="nav-item">
+                    <a class="nav-link" href="index.html">Home</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active" href="#">Playground</a>
+                </li>
+
+            </ul>
+        </div>
+    </div>
+</nav>
+
+
+<!-- End of page navibation -->
+
+
+<div style="height: 100px" ></div>
+
+
+<!-- main content -->
+<div class="container">
+
+    <!-- Buttons -->
+    <h3 class="mt-5">Saving Data</h3>
+
+
+    <p>In modern application development, it's essential to structure your data handling processes to be clean, modular, and maintainable. This article will guide you through a comprehensive approach to managing data in a service layer by focusing on five key steps: <strong>Prepare</strong>, <strong>Validate</strong>, <strong>Save</strong>, <strong>Save Related Data</strong>, and <strong>After Save</strong>. We'll demonstrate this using a <code>CompanyService</code> that manages <code>Company</code> entities and their related <code>Accounts</code>.</p>
+
+    <h4>Input</h4>
+    <p>Consider the data below is the expected data</p>
+    <pre><code class="language-php">
+{
+  "name": "Tech Innovations LLC",
+  "email": "info@techinnovations.com",
+  "phone": "+1-555-1234",
+  "address": "1234 Innovation Drive, Suite 100, Tech City",
+  "logo": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/wcAAwAB/et8lAAA",
+  "password": "securePassword123",
+  "parent_company_id": 1,
+  "accounts": [
+    {
+      "name": "John Doe",
+      "email": "john.doe@techinnovations.com",
+      "role": "Admin",
+      "password": "johnPassword123"
+    },
+    {
+      "name": "Jane Smith",
+      "email": "jane.smith@techinnovations.com",
+      "role": "Manager",
+      "password": "janePassword123"
+    }
+  ],
+  "company_industries": [2, 3]
+}
+    </code></pre>
+    <h4>Basics</h4>
+    <p>We will need a Route, Controller, and an action function to initiate the process of saving the company and its related data.</p>
+
+    <h5>-Route</h5>
+    <p>First, define a route in your <code>routes/web.php</code> file:</p>
+    <pre><code class="language-php">
+Route::post('/companies', [CompanyController::class, 'store']);
+</code></pre>
+
+    <h5>-Controller</h5>
+    <p>Next, create a controller with an action method that will handle the request. In this case, we'll use a <code>CompanyController</code>:</p>
+    <p>In this step we should handle basic validation in CompanyRequest class</p>
+    <pre><code class="language-php">
+&lt;?php
+
+namespace App\Http\Controllers;
+
+use Illuminate\Http\Request;
+use App\Services\CompanyService;
+
+class CompanyController extends Controller
+{
+    protected $companyService;
+
+    public function __construct(CompanyService $companyService)
+    {
+        $this->companyService = $companyService;
+    }
+
+    public function store(CompanyRequest $request)
+    {
+        $company = $this->companyService->storeAndCommit($params);
+
+        return response()->json($company);
+    }
+}
+</code></pre>
+
+
+    <h4>Base Service Class</h4>
+    <p>We should have a base service class which contain functions that are needed in all services that save data .</p>
+    <pre><code class="language-php">
+&lt;?php
+
+namespace App\Services;
+class DefaultService
+{
+    public $repository;
+
+    public function storeAndCommit($params)
+    {
+        DB::beginTransaction();
+        try {
+            $result = $this->store($params);
+            DB::commit();
+            $result->refresh();
+            return $result;
+        } catch (Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    public function updateAndCommit($params)
+    {
+        DB::beginTransaction();
+        try {
+            $result = $this->update($params);
+            DB::commit();
+            $result->refresh();
+            return $result;
+        } catch (Exception $e) {
+            DB::rollBack();
+            throw $e;
+        }
+    }
+
+    public function store($params)
+    {
+        return $this->repository->store($params);
+    }
+
+    public function update($params)
+    {
+        return $this->repository->update($params);
+    }
+
+
+    public function saveMany($params, $extraParams = []): void
+    {
+        foreach ($params as $param) {
+            $param = array_merge($param, $extraParams);
+            $this->saveOne($param);
+        }
+    }
+
+    public function saveOne($param)
+    {
+        if (isset($param['id'])) {
+            return $this->update($param);
+        } else {
+            return $this->store($param);
+        }
+    }
+
+    public function saveManyToMany($arr): void
+    {
+        $field1 = array_keys($arr)[0];
+        $field1data = array_values($arr)[0];
+        $field2 = array_keys($arr)[1];
+        $field2data = array_values($arr)[1];
+        $result = [];
+        $this->deleteMany([$field2 => $field2data]);
+        $field1data = array_unique($field1data);
+        foreach ($field1data as $item) {
+            $resultItem[$field1] = $item;
+            $resultItem[$field2] = $field2data;
+            $result[] = $resultItem;
+        }
+        $this->saveMany($result);
+    }
+
+    public function deleteMany($filters): void
+    {
+        $this->repository->deleteMany($filters);
+    }
+}
+
+</code></pre>
+
+
+
+    <h4>Base Repository Class</h4>
+    <p>Also we should have default repository that contain basic save functions .</p>
+    <pre><code class="language-php">
+&lt;?php
+
+namespace App\Repositories;
+
+use Illuminate\Support\Facades\Log;
+
+class DefaultRepository
+{
+    public $modelName;
+    public function store($params)
+    {
+        $modelName = $this->modelName;
+        $modelObject = new $modelName;
+        $modelObject->fill($params);
+        $modelObject->save();
+        return $modelObject;
+    }
+
+    public function update($params)
+    {
+        $modelName = $this->modelName;
+        $modelObject = $modelName::findOrFail($params['id']);
+        $modelObject->fill($params);
+        $modelObject->save();
+        return $modelObject;
+    }
+}
+
+</code></pre>
+
+
+
+    <h4>The Service class</h4>
+    <p>The service class will have two main functions save() and update() that will contain the 5 main steps.</p>
+    <ul>
+        <li>Prepare</li>
+        <li>Validate</li>
+        <li>Save</li>
+        <li>Save related data</li>
+        <li>After save</li>
+    </ul>
+
+    <pre><code class="language-php">
+&lt;?php
+
+namespace App\Services;
+
+class CompanyService extends DefaultService
+{
+    public function __construct(CompanyRepository $companyRepository)
+    {
+        $this->repository = $companyRepository;
+    }
+    public function store($params)
+    {
+        $params = $this->prepareArray($params);
+
+        $this->validate($params);
+
+        $company = parent::store($params);
+
+        $this->saveRelatedData($company, $params);
+
+        $this->afterSave($company, $params);
+
+        return $company;
+    }
+
+    public function update($params)
+    {
+        $params = $this->prepareArray($params);
+
+        $this->validate($params);
+
+        $company = parent::update($params);
+
+        $this->saveRelatedData($company, $params);
+
+        $this->afterSave($company, $params);
+
+        return $company;
+    }
+}
+
+</code></pre>
+
+
+    <h4>Prepare</h4>
+    <p>The first step in the process is to prepare the data. This involves transforming and structuring the incoming data so that it can be correctly processed and stored.</p>
+
+    <pre><code class="language-php">
+&lt;?php
+class CompanyService extends DefaultService
+{
+   //...
+
+   public function prepareArray($params)
+    {
+        if (isset($params['logo'])) {
+            $params = $this->handleUploadLogo($params);
+        }
+        if (isset($params['password'])) {
+            $params = $this->handlePassword( $params );
+        }
+        return $params;
+    }
+    public function handlePassword($params){
+        $params['password']=Hash::make($params['password']);
+        return $params;
+    }
+    public function handleUploadLogo($params){
+        $mediaUpload=new MediaUpload();
+        $mediaUpload->upload($params['logo']);
+        $params['logo']=$mediaUpload->getUrl();
+        return $params;
+    }
+}
+
+</code></pre>
+
+    <h4>Validate</h4>
+    <p>After preparing the data, the next step is to validate it. Validation ensures that the data meets all required criteria before proceeding to the save operation.</p>
+
+    <pre><code class="language-php">
+&lt;?php
+class CompanyService extends DefaultService
+{
+   //...
+
+    public function validate($params)
+    {
+        if (isset($params['parent_company_id']) && isset($params['id']) && $params['parent_company_id'] == $params['id']) {
+            throw new \Exception('A company cannot be its own parent.');
+        }
+    }
+
+}
+
+</code></pre>
+
+    <h4>Save</h4>
+    <p>saving the data logic is handled in the parent class .</p>
+
+    <pre><code class="language-php">
+
+$company = parent::store($params);
+
+</code></pre>
+
+
+
+
+    <h4>Save Related Data</h4>
+    <p>After saving the primary data, you may need to handle related data. This involves saving records that are associated with the main record, such as accounts related to a company. it should be something clear and simple just like writing the relations in the model</p>
+    <pre><code class="language-php">
+class CompanyService extends DefaultService
+{
+   //...
+    public function saveRelatedData($company, $params)
+    {
+
+        if (isset($params['company_documents'])) {
+            (new MediaUploadService())->saveMany($params['account_documents'], [
+                'model_id' => $company->id,
+                'model_type' => ModelTypes::company,
+                'flag' => 'account_documents',
+            ]);
+        }
+
+        if (isset($params['accounts'])) {
+            app(AccountService::class)->saveMany($params['accounts'], [
+                'company_id' => $company->id,
+            ]);
+        }
+
+        if (isset($params['company_industries'])) {
+            app(CompanyIndustries::class)->saveManyToMany([
+                'commodity_id' => $params['company_industries'],
+                'company_id' => $company->id
+            ]);
+        }
+    }
+}
+</code></pre>
+
+
+    <h4>After Save</h4>
+    <p>Now we might need to do something after saving . </p>
+    <pre><code class="language-php">
+class CompanyService extends DefaultService
+{
+   //...
+    public function afterSave($company, $params)
+    {
+        if (isset($params['accounts'])) {
+            $company->number_of_accounts=$company->accounts->count() ;
+            $company->save();
+        }
+    }
+}
+</code></pre>
+
+    <h2>Conclusion</h2>
+    <p>By structuring your data-saving process into discrete steps—<strong>Prepare</strong>, <strong>Validate</strong>, <strong>Save</strong>,  <strong>Save Related Data</strong> and <strong> After Save </strong>—  you create a well-organized and maintainable codebase. This approach allows each step to build upon the previous one, ensuring that your data handling is robust and scalable.</p>
+    <p>The <code>CompanyService</code>  class in this example illustrate how to implement these steps in Laravel using a service layer while leveraging a base <code>DefaultService</code> class for common operations. This modular approach enhances code clarity and facilitates easier management of complex data interactions.</p>
+
+</div>
+
+    <!-- End of Contact Section -->
+
+    <!-- Page Footer -->
+    <footer class="page-footer">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-sm-6">
+                    <p>Copyright <script>document.write(new Date().getFullYear())</script> &copy; Hossam Hassan</p>
+                </div>
+                <div class="col-sm-6">
+                    <div class="socials">
+                        <a class="social-item" href="https://www.facebook.com/hossam.hassan.1257604"><i class="ti-facebook"></i></a>
+                        <a class="social-item" href="https://www.linkedin.com/in/hossam-hassan-715aa827/"><i class="ti-linkedin"></i></a>
+                        <a class="social-item" href="https://github.com/hossamj2004"><i class="ti-github"></i></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer> 
+    <!-- End of page footer -->
+	
+	<!-- core  -->
+    <script src="assets/vendors/jquery/jquery-3.4.1.js"></script>
+    <script src="assets/vendors/bootstrap/bootstrap.bundle.js"></script>
+    <!-- bootstrap 3 affix -->
+	<script src="assets/vendors/bootstrap/bootstrap.affix.js"></script>
+
+    <!-- steller js -->
+    <script src="assets/js/steller.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/languages/php.min.js"></script>
+<script>
+    hljs.highlightAll();
+</script>
+</body>
+</html>

@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <meta name="description" content="Start your development with Steller landing page.">
+    <meta name="author" content="Devcrud">
+    <title>Hossam Hassan Landing page | Web Developer</title>
+    <!-- font icons -->
+    <link rel="stylesheet" href="assets/vendors/themify-icons/css/themify-icons.css">
+    <!-- Bootstrap + Steller main styles -->
+	<link rel="stylesheet" href="assets/css/steller.css">
+    <link rel="icon" type="image/png" href="assets/imgs/new/logo3.png">
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/default.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github.min.css">
+
+</head>
+<body data-spy="scroll" data-target=".navbar" data-offset="40" id="home">
+
+<!-- Page navigation -->
+<nav class="navbar navbar-expand-lg navbar-light fixed-top" data-spy="affix" data-offset-top="0">
+    <div class="container">
+        <a class="navbar-brand" href="#"><img src="assets/imgs/new/logo3.png" href="index.html" alt=""></a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarSupportedContent" aria-controls="navbarSupportedContent" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarSupportedContent">
+            <ul class="navbar-nav ml-auto align-items-center">
+                <li class="nav-item">
+                    <a class="nav-link" href="index.html">Home</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active" href="#">Playground</a>
+                </li>
+
+            </ul>
+        </div>
+    </div>
+</nav>
+
+
+<!-- End of page navibation -->
+
+
+<div style="height: 100px" ></div>
+
+
+<!-- main content -->
+<div class="container">
+
+    <!-- Buttons -->
+    <h3 class="mt-5">Retrieving data</h3>
+
+    <h1>Retrieving Data</h1>
+    <p>In modern API-driven applications, efficiently retrieving data is foundational for creating responsive and user-friendly experiences. As applications scale and user requirements become more nuanced, dynamic filtering becomes a vital feature for APIs. Dynamic filtering allows clients to specify precisely what data they need, reducing the need for hardcoded backend logic and enabling more scalable and maintainable solutions.</p>
+
+    <p>Using a standardized filtering pattern, such as <code>[field:operator]=value</code> or <code>[ParentObject][field:operator]=value</code>, provides a clear and consistent approach for querying data. This method not only simplifies the development process but also enhances the flexibility and power of your API.</p>
+
+    <p>In this article, we'll explore how to implement dynamic filtering in Laravel, including handling related data filters and extending the system with custom filters. By the end of this guide, you'll have a robust filtering mechanism that can handle complex queries and scale with your application.</p>
+
+    <h2>1. Setting Up Dynamic Filters in Laravel</h2>
+    <p>Laravel’s Eloquent ORM and query builder provide a solid foundation for implementing dynamic filtering. Here's a basic outline of how to build a filtering system that includes handling related data filters.</p>
+
+    <h3>Basic Outline: Handling Related Data Filters</h3>
+    <p>To manage dynamic filters, including those for related data, we need to build a system that can interpret and apply these filters effectively. Here’s how we can approach this:</p>
+
+    <ol>
+        <li><strong>Parse Query Parameters</strong>: Extract the filter parameters from the request, including those related to nested or related data.</li>
+        <li><strong>Map Filters to Query Builder</strong>: Convert these parameters into Eloquent queries.</li>
+        <li><strong>Handle Related Data Filters</strong>: Apply filters to related models using Laravel’s relationship methods.</li>
+    </ol>
+
+    <h4>1.1. Parsing Query Parameters</h4>
+    <p>The filtering system will receive parameters in the URL query string. For example, a request might look like:</p>
+    <pre><code>/api/products?filter[price:gt]=100&filter[Category][name:contains]=Electronics</code></pre>
+    <p>In this example, <code>filter[price:gt]=100</code> filters products where the price is greater than 100, and <code>filter[category][name:contains]=Electronics</code> filters products based on the name of the related <code>category</code> model.</p>
+
+    <h4>1.2. Mapping Filters to Query Builder</h4>
+    <p>The filter parameters need to be converted into query builder methods. For the basic fields, such as <code>price:gt=100</code>, this is straightforward. For related data, such as <code>filter[category][name:contains]=Electronics</code>, we need to apply a more complex query involving relationships.</p>
+
+    <h4>1.3. Handling Related Data Filters</h4>
+    <p>Handling related data filters involves using Laravel’s Eloquent relationship methods. For instance, if you want to filter products based on a related <code>category</code> model, you need to apply the filter within a <code>whereHas</code> clause.</p>
+
+    <h2>2. Implementing the Filter System</h2>
+
+    <p>Now, let's create a class named <code>ExtendQueryBuilder</code> that will handle the dynamic filtering logic.</p>
+
+    <div class="code-block-ignore">
+        <pre><code class="language-php">&lt;?php
+namespace App\Utilities;
+
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Model;
+use ReflectionClass;
+use ReflectionMethod;
+
+class ExtendQueryBuilder
+{
+    /**
+     * Create a query builder instance for the given model and apply filters, sorting, and grouping.
+     *
+     * @param string $modelName The model name (e.g., "User")
+     * @param array $params The parameters for the query (select, filter, sort, group_by)
+     * @return Builder The resulting query builder
+     */
+    public static function for(string $modelName, array $params): Builder
+    {
+        // Initialize the model
+        $model = self::initializeModel($modelName);
+
+        // Start building the query
+        $query = $model->newQuery();
+
+        // Apply SELECT clause
+        $query->select($params['select'] ?? $model->getTable() . '.*');
+
+        // Apply filters
+        if (isset($params['filter'])) {
+            $query = self::applyFilters($model, $query, $params['filter']);
+        }
+
+        // Apply sorting
+        if (isset($params['sort'])) {
+            $query = self::applySort($query, $params['sort']);
+        }
+
+        // Apply grouping
+        if (isset($params['group_by'])) {
+            $query->groupBy($params['group_by']);
+        }
+
+        return $query;
+    }
+
+    /**
+     * Initialize a model instance based on the provided class name.
+     *
+     * @param string $modelName The model name (e.g., "User")
+     * @return Model The initialized model instance
+     */
+    private static function initializeModel(string $modelName): Model
+    {
+        $modelClass = "App\\Models\\$modelName";
+        if (!class_exists($modelClass) || !is_subclass_of($modelClass, Model::class)) {
+            throw new \InvalidArgumentException("Model class $modelClass does not exist or is not a valid model.");
+        }
+        return new $modelClass();
+    }
+
+    /**
+     * Apply filters to the query.
+     *
+     * @param Model $model The model instance
+     * @param Builder $query The query builder
+     * @param array $filters The filters to apply
+     * @return Builder The query builder with applied filters
+     */
+    private static function applyFilters(Model $model, Builder $query, array $filters): Builder
+    {
+        // Resolve custom filter class if exists
+        $filterClass = self::resolveModelFilterClass($model);
+        if ($filterClass) {
+            $filterObject= (new $filterClass($query));
+            $filters = $filterObject->prepareFiltersArray($filters);
+            $query = $filterObject->apply($filters);
+        }
+
+        // Apply joins based on relationships in filters
+        $relations = self::getJoinsFromFilters($model, $filters);
+        if (count($relations) > 0) {
+            $query = self::addJoinsToBuilder($query, $relations);
+        }
+
+        // Loop through each filter and apply it
+        foreach ($filters as $field => $value) {
+            if (is_array($value)) {
+                // Handle nested filters (related models)
+                $nestedModelClass = "App\\Models\\$field";
+                $query = self::applyFilters(new $nestedModelClass, $query, $value);
+            } else {
+                // Apply filter for the current model
+                $query = self::applyQueryFor($model, $query, $field, $value);
+            }
+        }
+
+        return $query;
+    }
+
+    /**
+     * Apply a single filter to the query based on the field and value.
+     *
+     * @param Model $model The model instance
+     * @param Builder $query The query builder
+     * @param string $field The field to filter
+     * @param mixed $value The value to filter by
+     * @return Builder The query builder with the applied filter
+     */
+    private static function applyQueryFor(Model $model, Builder $query, string $field, $value): Builder
+    {
+        // Determine the operator (default to 'eq' if none is provided)
+        [$field, $operator] = strpos($field, ':') !== false ? explode(':', $field) : [$field, 'eq'];
+
+        // Ensure the field is fillable before applying the filter
+        if (!in_array($field, $model->getFillable())) {
+            return $query;
+        }
+
+        return self::applyQuery($model, $query, $field, $operator, $value);
+    }
+
+    /**
+     * Apply a query filter based on the operator.
+     *
+     * @param Model $model The model instance
+     * @param Builder $query The query builder
+     * @param string $field The field to filter
+     * @param string $operator The operator (e.g., 'gt', 'lt', 'like')
+     * @param mixed $value The value to filter by
+     * @return Builder The query builder with the applied filter
+     */
+    private static function applyQuery($modelClass,Builder $query, string $field, string $operator, $value): Builder
+    {
+        $tableName = ($modelClass::getInstance())->getTable();
+        switch ($operator) {
+            case 'gt':
+                return $query->where($tableName.'.'.$field, '>', $value);
+            case 'lt':
+                return $query->where($tableName.'.'.$field, '<', $value);
+            case 'gte':
+                return $query->where($tableName.'.'.$field, '>=', $value);
+            case 'lte':
+                return $query->where($tableName.'.'.$field, '<=', $value);
+            case 'like':
+                return $query->where($tableName.'.'.$field, 'LIKE', "%$value%");
+            case 'not':
+                return $query->where(function ($query) use ($tableName,$field,$value){
+                    $query->where($tableName . '.' . $field, '<>', $value)
+                        ->orWhereNull($tableName . '.' . $field) ;
+                });
+            case 'isnotnull':
+                return $query->whereNotNull($tableName.'.'.$field);
+            case 'isnull':
+                return $query->whereNull($tableName.'.'.$field);
+            case 'notin':
+                return $query->whereNotIn($tableName.'.'.$field, explode(',',$value));
+            case 'in':
+                return $query->whereIn($tableName.'.'.$field, explode(',',$value));
+            default:
+                return (explode(',',$value) >1) ?
+                    $query->whereIn($tableName.'.'.$field, explode(',',$value)) :
+                    $query->where($tableName . '.' . $field, '=', $value);
+        }
+    }
+
+
+
+    /**
+     * Apply sorting to the query.
+     *
+     * @param Builder $query The query builder
+     * @param string $sort The sort parameter (e.g., '-name' for descending)
+     * @return Builder The query builder with applied sorting
+     */
+    private static function applySort(Builder $query, string $sort): Builder
+    {
+        $direction = strpos($sort, '-') === 0 ? 'desc' : 'asc';
+        $field = ltrim($sort, '-');
+        return $query->orderBy($field, $direction);
+    }
+
+    /**
+     * Resolve the custom filter class for the model, if exists.
+     *
+     * @param Model $model The model instance
+     * @return string|null The filter class or null if not found
+     */
+    private static function resolveModelFilterClass(Model $model): ?string
+    {
+        $filterClass = "App\\Filters\\" . class_basename($model) . "Filter";
+        return class_exists($filterClass) ? $filterClass : null;
+    }
+
+    /**
+     * Get relationships from filters and prepare joins.
+     *
+     * @param Model $model The model instance
+     * @param array $filters The filters array
+     * @return array The relations for joining
+     */
+    private static function getJoinsFromFilters(Model $model, array $filters): array
+    {
+        $joins = [];
+        foreach ($filters as $relatedModel => $filter) {
+            if (is_array($filter) && class_exists("App\\Models\\$relatedModel")) {
+                $relationType = self::getRelationType($model, $relatedModel);
+                if ($relationType) {
+                    $joins[] = [
+                        'type' => $relationType,
+                        'current_model' => class_basename($model),
+                        'related_model' => $relatedModel,
+                    ];
+                }
+            }
+        }
+        return $joins;
+    }
+
+    /**
+     * Add joins to the query builder.
+     *
+     * @param Builder $query The query builder
+     * @param array $joins The array of joins to apply
+     * @return Builder The query builder with applied joins
+     */
+    private static function addJoinsToBuilder(Builder $query, array $joins): Builder
+    {
+        foreach ($joins as $join) {
+            $currentTable = (new ("App\\Models\\" . $join['current_model']))->getTable();
+            $relatedTable = (new ("App\\Models\\" . $join['related_model']))->getTable();
+
+            if ($join['type'] === 'BelongsTo') {
+                $query = self::addBelongsToJoin($query, $currentTable, $relatedTable, $join['related_model']);
+            } elseif ($join['type'] === 'HasMany') {
+                $query = self::addHasManyJoin($query, $currentTable, $relatedTable, $join['current_model']);
+            }
+        }
+
+        return $query;
+    }
+
+    /**
+     * Add a BelongsTo relationship join.
+     *
+     * @param Builder $query The query builder
+     * @param string $currentTable The current table name
+     * @param string $relatedTable The related table name
+     * @param string $relatedModel The related model name
+     * @return Builder The query builder with applied join
+     */
+    private static function addBelongsToJoin(Builder $query, string $currentTable, string $relatedTable, string $relatedModel): Builder
+    {
+        $foreignKey = self::fromCamelToDash($relatedModel) . '_id';
+        if (!self::hasJoinedBefore($query, "$relatedTable as $relatedTable")) {
+            $query->leftJoin("$relatedTable as $relatedTable", "$currentTable.$foreignKey", '=', "$relatedTable.id");
+        }
+        return $query;
+    }
+
+    /**
+     * Add a HasMany relationship join.
+     *
+     * @param Builder $query The query builder
+     * @param string $currentTable The current table name
+     * @param string $relatedTable The related table name
+     * @param string $currentModel The current model name
+     * @return Builder The query builder with applied join
+     */
+    private static function addHasManyJoin(Builder $query, string $currentTable, string $relatedTable, string $currentModel): Builder
+    {
+        $foreignKey = self::fromCamelToDash($currentModel) . '_id';
+        if (!self::hasJoinedBefore($query, "$relatedTable as $relatedTable")) {
+            $query->leftJoin("$relatedTable as $relatedTable", "$relatedTable.$foreignKey", '=', "$currentTable.id");
+        }
+        return $query;
+    }
+
+    /**
+     * Determine the relation type (BelongsTo, HasMany, etc.) between two models.
+     *
+     * @param Model $model The model instance
+     * @param string $relatedModel The related model name
+     * @return string|null The relation type or null if not found
+     */
+    private static function getRelationType(Model $model, string $relatedModel): ?string
+    {
+        $relatedModelClass = "App\\Models\\$relatedModel";
+        $methodName = lcfirst($relatedModel);
+
+        // Check for relation method or relation by table name
+        foreach ((new ReflectionClass($model))->getMethods(ReflectionMethod::IS_PUBLIC) as $method) {
+            if ($method->name === $methodName || $method->name === self::dashesToCamelCase((new $relatedModelClass())->getTable())) {
+                $relation = $method->invoke($model);
+                return (new ReflectionClass($relation))->getShortName();
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Convert a camelCase string to a snake_case string.
+     *
+     * @param string $input The input string in camelCase
+     * @return string The converted string in snake_case
+     */
+    private static function fromCamelToDash(string $input): string
+    {
+        return strtolower(preg_replace('/([a-z])([A-Z])/', '$1_$2', $input));
+    }
+
+    /**
+     * Convert a snake_case string to a camelCase string.
+     *
+     * @param string $string The input string in snake_case
+     * @param bool $capitalizeFirstCharacter Should the first character be capitalized?
+     * @return string The converted string in camelCase
+     */
+    private static function dashesToCamelCase(string $string, bool $capitalizeFirstCharacter = false): string
+    {
+        $str = str_replace(' ', '', ucwords(str_replace('_', ' ', $string)));
+        if (!$capitalizeFirstCharacter) {
+            $str = lcfirst($str);
+        }
+        return $str;
+    }
+
+    /**
+     * Check if the table has already been joined in the query.
+     *
+     * @param Builder $query The query builder
+     * @param string $table The table name to check
+     * @return bool Whether the table has already been joined
+     */
+    public static function hasJoinedBefore(Builder $query, string $table): bool
+    {
+        $joins = $query->getQuery()->joins;
+        if (!is_array($joins) && !is_object($joins)) {
+            return false;
+        }
+        foreach ($joins as $join) {
+            if (trim($join->table) === trim($table)) {
+                return true;
+            }
+        }
+        return false;
+    }
+}
+
+</code></pre>
+    </div>
+
+    <h2>3. Using the <code>ExtendQueryBuilder</code> Class with Default Service and Repository Pattern</h2>
+
+    <p>Now that we have the <code>ExtendQueryBuilder</code> class, we can integrate it into our application using a default service and repository pattern. This approach provides a cleaner separation of concerns, making the code more maintainable and testable.</p>
+
+    <h3>3.1. Creating the Repository</h3>
+
+    <p>First, let's define the repository class that will interact with the <code>ExtendQueryBuilder</code> class to fetch data.</p>
+
+    <div class="code-block-ignore">
+        <pre><code class="language-php">&lt;?php
+
+namespace App\Repositories;
+
+use App\Utilities\ExtendQueryBuilder;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Collection;
+use Illuminate\Pagination\LengthAwarePaginator;
+
+abstract class DefaultRepository implements DefaultRepositoryInterface
+{
+    protected $model;
+
+    /**
+     * DefaultRepository constructor.
+     *
+     * @param Model $model
+     */
+    public function __construct(Model $model)
+    {
+        $this->model = $model;
+    }
+
+    /**
+     * Find a list of items by applying filters with pagination.
+     *
+     * @param array $filters
+     * @return LengthAwarePaginator
+     */
+    public function index(array $filters = []): LengthAwarePaginator
+    {
+        // Extract perPage from filters if available, default to 15
+        $perPage = $filters['per_page'] ?? 15;
+
+        // Remove per_page from filters to avoid affecting the query
+        unset($filters['per_page']);
+
+        // Build the query using ExtendQueryBuilder
+        $query = ExtendQueryBuilder::for($this->model::class, $filters);
+
+        // Apply pagination
+        return $query->paginate($perPage);
+    }
+
+    /**
+     * Find a list of items by applying filters.
+     *
+     * @param array $filters
+     * @return Collection
+     */
+    public function find(array $filters = []): Collection
+    {
+        // Build the query using ExtendQueryBuilder
+        $query = ExtendQueryBuilder::for($this->model::class, $filters);
+
+        // Execute the query and return results
+        return $query->get();
+    }
+
+    /**
+     * Find the first item by applying filters.
+     *
+     * @param array $filters
+     * @return Model|null
+     */
+    public function findFirst(array $filters = []): ?Model
+    {
+        // Build the query using ExtendQueryBuilder
+        $query = ExtendQueryBuilder::for($this->model::class, $filters);
+
+        // Execute the query and return the first result
+        return $query->first();
+    }
+
+    /**
+     * Count items by applying filters.
+     *
+     * @param array $filters
+     * @return int
+     */
+    public function count(array $filters = []): int
+    {
+        // Build the query using ExtendQueryBuilder
+        $query = ExtendQueryBuilder::for($this->model::class, $filters);
+
+        // Execute the query and return the count
+        return $query->count();
+    }
+
+    /**
+     * Sum a specific column by applying filters.
+     *
+     * @param string $column
+     * @param array $filters
+     * @return float
+     */
+    public function sum(string $column, array $filters = []): float
+    {
+        // Build the query using ExtendQueryBuilder
+        $query = ExtendQueryBuilder::for($this->model::class, $filters);
+
+        // Execute the query and return the sum
+        return $query->sum($column);
+    }
+}
+</code></pre>
+    </div>
+
+    <h3>3.2. Creating the Default Service</h3>
+
+    <p>Next, we will create a default service class that provides common service methods for interacting with the repository.</p>
+
+    <div class="code-block-ignore">
+        <pre><code class="language-php">&lt;?php
+
+namespace App\Services;
+
+use App\Repositories\DefaultRepositoryInterface;
+use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
+
+abstract class DefaultService
+{
+    protected $repository;
+
+    /**
+     * DefaultService constructor.
+     *
+     * @param DefaultRepositoryInterface $repository
+     */
+    public function __construct(DefaultRepositoryInterface $repository)
+    {
+        $this->repository = $repository;
+    }
+
+    /**
+     * Get paginated list of items with filters.
+     *
+     * @param array $filters
+     * @return LengthAwarePaginator
+     */
+    public function index(array $filters = []): LengthAwarePaginator
+    {
+        return $this->repository->index($filters);
+    }
+
+    /**
+     * Get a list of items with filters.
+     *
+     * @param array $filters
+     * @return Collection
+     */
+    public function find(array $filters = []): Collection
+    {
+        return $this->repository->find($filters);
+    }
+
+    /**
+     * Get the first item matching the filters.
+     *
+     * @param array $filters
+     * @return Model|null
+     */
+    public function findFirst(array $filters = []): ?Model
+    {
+        return $this->repository->findFirst($filters);
+    }
+
+    /**
+     * Count the number of items matching the filters.
+     *
+     * @param array $filters
+     * @return int
+     */
+    public function count(array $filters = []): int
+    {
+        return $this->repository->count($filters);
+    }
+
+    /**
+     * Sum a specific column of items.
+     *
+     * @param string $column
+     * @param array $filters
+     * @return float
+     */
+    public function sum(string $column, array $filters = []): float
+    {
+        return $this->repository->sum($column, $filters);
+    }
+}
+</code></pre>
+    </div>
+
+    <h3>3.3. Creating the ProductService</h3>
+
+    <p>Now, create a <code>ProductService</code> class that extends the <code>DefaultService</code>. This class will be empty for now but is ready for future customizations.</p>
+
+    <div class="code-block-ignore">
+        <pre><code class="language-php">&lt;?php
+
+namespace App\Services;
+
+use App\Repositories\DefaultRepositoryInterface;
+
+class ProductService extends DefaultService
+{
+    // Currently, ProductService is empty and extends DefaultService
+}
+</code></pre>
+    </div>
+
+    <h3>3.4. Using the Service in a Controller</h3>
+
+    <p>Finally, use the <code>ProductService</code> class in our controller to handle data retrieval with dynamic filtering. We will validate the request parameters and pass them to the service.</p>
+
+    <div class="code-block-ignore">
+        <pre><code class="language-php">&lt;?php
+
+namespace App\Http\Controllers;
+
+use App\Services\ProductService;
+use Illuminate\Http\Request;
+
+class ProductController extends Controller
+{
+    protected $productService;
+
+    /**
+     * ProductController constructor.
+     *
+     * @param ProductService $productService
+     */
+    public function __construct(ProductService $productService)
+    {
+        $this->productService = $productService;
+    }
+
+    public function index(Request $request)
+    {
+        // Validate request parameters
+        $params = $request->validate([
+            'page' => 'nullable|int|min:1',
+            'per_page' => 'nullable|int|min:1',
+            'filter' => 'array',
+            'sort' => 'nullable|string|min:1'
+        ]);
+
+        // Get paginated products using the service
+        $products = $this->productService->index($filters);
+
+        // Return results as JSON
+        return response()->json($products);
+    }
+}
+</code></pre>
+    </div>
+
+    <h2>4. Adding Custom Filters</h2>
+
+    <p>To further enhance the filtering capabilities, you can add custom filters. This involves creating a base filter class and extending it for specific models. Custom filters allow for more granular control over query modifications.</p>
+
+    <h3>4.1. Creating the Base Filter</h3>
+
+    <p>First, create a base filter class that will handle common filter logic and provide methods for applying filters.</p>
+
+    <div class="code-block-ignore">
+        <pre><code class="">&lt;?php
+
+namespace App\Filters;
+
+use App\Utilities\ExtendQueryBuilder;
+use Illuminate\Database\Eloquent\Builder;
+
+class BaseFilter
+{
+    protected $query;
+
+    public function __construct(Builder $query)
+    {
+        $this->query = $query;
+    }
+
+    /**
+     * Apply filters to the query.
+     *
+     * @param array $filters
+     * @return Builder
+     */
+    public function apply(array $filters): Builder
+    {
+        foreach ($filters as $filter => $value) {
+            if (method_exists($this, $filter)) {
+                $this->$filter($value);
+            }
+        }
+
+        return $this->query;
+    }
+
+    /**
+     * Prepare filters array (could be overridden by subclasses).
+     *
+     * @param array $filters
+     * @return array
+     */
+    public function prepareFiltersArray(array $filters): array
+    {
+        return $filters;
+    }
+
+    /**
+     * Check if a table has been joined before.
+     *
+     * @param string $table
+     * @return bool
+     */
+    protected function hasJoinedBefore(string $table): bool
+    {
+        return ExtendQueryBuilder::hasJoinedBefore($this->query, $table);
+    }
+}
+</code></pre>
+    </div>
+
+
+    <h3>4.2. Creating Custom Filters for Models</h3>
+
+    <p>For each model, you can create specific filter classes that extend the <code>BaseFilter</code> class and implement custom filtering logic. This allows you to encapsulate filter logic for each model in its own class.</p>
+
+    <p>For example, if you have a <code>Product</code> model, you could create a <code>ProductFilter</code> class:</p>
+
+    <div class="code-block-ignore">
+        <pre><code class="language-php">&lt;?php
+
+namespace App\Filters;
+
+use Illuminate\Database\Eloquent\Builder;
+
+class ProductFilter extends BaseFilter
+{
+    protected function search($searchTerm)
+    {
+        $this->query->where(function (Builder $query) use ($searchTerm) {
+            $query->where('name', 'like', '%' . $searchTerm . '%')
+                  ->orWhere('description', 'like', '%' . $searchTerm . '%');
+        });
+    }
+}
+</code></pre>
+    </div>
+
+    <p>In your repository or service, you can use these custom filter classes to apply specific filters to your queries.</p>
+
+    <h2>5. Testing the Filtering System</h2>
+
+    <p>To test the filtering system, you can use tools like Postman or cURL to send requests to your API endpoint. Here are some example requests:</p>
+
+    <ul>
+        <li><strong>Filter by price greater than 100:</strong> <code>/api/products?filter[price:gt]=100</code></li>
+        <li><strong>Filter by category name containing "Electronics":</strong> <code>/api/products?filter[category][name:contains]=Electronics</code></li>
+        <li><strong>Filter by searching for "mobile" in name or description using custom filters:</strong> <code>/api/products?filter[search]=mobile</code></li>
+        <li><strong>Sort by price in descending order:</strong> <code>/api/products?sort=-price</code></li>
+    </ul>
+
+    <p>Each request will dynamically filter and return the results based on the parameters provided.</p>
+
+    <h2>6. Conclusion</h2>
+
+    <p>Implementing dynamic filtering in Laravel using the <code>ExtendQueryBuilder</code> class along with the service and repository pattern provides a flexible and powerful way to manage complex queries. By supporting filters for related data and allowing for dynamic sorting and grouping, this approach can greatly enhance the responsiveness and versatility of your API. This method scales well with the growth of your application and helps maintain a clean and maintainable codebase.</p>
+
+    <p>Feel free to extend and customize the <code>ExtendQueryBuilder</code> class, the service, and repository classes to suit your specific needs and business logic. With this system in place, you'll be well-equipped to handle a wide range of data retrieval scenarios in your Laravel applications.</p>
+
+
+
+
+    <!-- End of Contact Section -->
+
+    <!-- Page Footer -->
+    <footer class="page-footer">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-sm-6">
+                    <p>Copyright <script>document.write(new Date().getFullYear())</script> &copy; Hossam Hassan</p>
+                </div>
+                <div class="col-sm-6">
+                    <div class="socials">
+                        <a class="social-item" href="https://www.facebook.com/hossam.hassan.1257604"><i class="ti-facebook"></i></a>
+                        <a class="social-item" href="https://www.linkedin.com/in/hossam-hassan-715aa827/"><i class="ti-linkedin"></i></a>
+                        <a class="social-item" href="https://github.com/hossamj2004"><i class="ti-github"></i></a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </footer> 
+    <!-- End of page footer -->
+	
+	<!-- core  -->
+    <script src="assets/vendors/jquery/jquery-3.4.1.js"></script>
+    <script src="assets/vendors/bootstrap/bootstrap.bundle.js"></script>
+    <!-- bootstrap 3 affix -->
+	<script src="assets/vendors/bootstrap/bootstrap.affix.js"></script>
+
+    <!-- steller js -->
+    <script src="assets/js/steller.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/languages/php.min.js"></script>
+    <script>
+        hljs.highlightAll();
+    </script>
+</body>
+</html>
