@@ -127,9 +127,9 @@ class ExtendQueryBuilder
         }
 
         // Apply grouping
-        if (isset($params['group_by'])) {
-            $query->groupBy($params['group_by']);
-        }
+        $disableGrouping = isset($filters['group_by']) && $filters['group_by'] === false;
+        if (!$disableGrouping)
+            $query->groupBy($filters['group_by'] ?? $model->getTable() . '.id');
 
         return $query;
     }
@@ -160,18 +160,18 @@ class ExtendQueryBuilder
     private static function applyFilters(Model $model, Builder $query, array $filters): Builder
     {
         // Resolve custom filter class if exists
-        $filterClass = self::resolveModelFilterClass($model);
-        if ($filterClass) {
-            $filterObject= (new $filterClass($query));
-            $filters = $filterObject->prepareFiltersArray($filters);
-            $query = $filterObject->apply($filters);
+            $filterClass = self::resolveModelFilterClass($model);
+            if ($filterClass) {
+                $filterObject = (new $filterClass($query));
+                $filters = $filterObject->prepareFiltersArray($filters);
+                $query = $filterObject->apply($filters);
         }
 
         // Apply joins based on relationships in filters
-        $relations = self::getJoinsFromFilters($model, $filters);
-        if (count($relations) > 0) {
-            $query = self::addJoinsToBuilder($query, $relations);
-        }
+            $relations = self::getJoinsFromFilters($model, $filters);
+            if (count($relations) > 0) {
+                $query = self::addJoinsToBuilder($query, $relations);
+            }
 
         // Loop through each filter and apply it
         foreach ($filters as $field => $value) {
@@ -248,7 +248,7 @@ class ExtendQueryBuilder
             case 'in':
                 return $query->whereIn($tableName.'.'.$field, explode(',',$value));
             default:
-                return (explode(',',$value) >1) ?
+                return (count(explode(',',$value)) >1) ?
                     $query->whereIn($tableName.'.'.$field, explode(',',$value)) :
                     $query->where($tableName . '.' . $field, '=', $value);
         }
